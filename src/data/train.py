@@ -1,51 +1,99 @@
 import duckdb
 import pandas as pd
+import pickle
+import os
 from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 
-# 1. Hubungkan ke DuckDB Lokal
+# ==========================================
+# 1. AMBIL DATA AGREGAT DARI DUCKDB
+# ==========================================
 db_path = r"C:\KULIAH\S6\RDV\project\data\processed\rdv_project.duckdb"
 con = duckdb.connect(db_path)
 
+print("--- Menarik Data Agregat untuk Training Model ---")
 query = """
     SELECT 
         t.pickup_date,
         t.pickup_hour,
         t.PULocationID AS location_id,
-        COUNT(*) AS total_demand, -- Target yang mau diprediksi (Y)
+        COUNT(*) AS total_demand, 
         AVG(w.temperature) AS temperature,
         AVG(w.precipitation) AS precipitation,
         AVG(w.weathercode) AS weathercode
     FROM fact_taxi_trip t
     LEFT JOIN fact_weather w 
         ON t.pickup_date = w.pickup_date AND t.pickup_hour = w.pickup_hour
+    WHERE EXTRACT(MONTH FROM t.tpep_pickup_datetime) IN (1, 2, 3)
     GROUP BY t.pickup_date, t.pickup_hour, t.PULocationID
-    LIMIT 500000 -- Batasan sampling agar training cepat di laptop
 """
 
 df_ml = con.execute(query).df()
-con.close()
+print(f"Total baris agregat data: {len(df_ml):,}")
 
-# 2. Feature Engineering Tambahan (Ekstrak Hari)
+# ==========================================
+# 2. FEATURE ENGINEERING
+# ==========================================
 df_ml['pickup_date'] = pd.to_datetime(df_ml['pickup_date'])
-df_ml['day_of_week'] = df_ml['pickup_date'].dt.dayofweek # 0=Senin, 6=Minggu
+df_ml['day_of_week'] = df_ml['pickup_date'].dt.dayofweek
 
-# 3. Tentukan Fitur (X) dan Target (Y)
-X = df_ml[['pickup_hour', 'location_id', 'temperature', 'precipitation', 'weathercode', 'day_of_week']]
+# Atur Fitur (X) dan Target (Y)
+features = ['pickup_hour', 'location_id', 'temperature', 'precipitation', 'weathercode', 'day_of_week']
+X = df_ml[features]
 y = df_ml['total_demand']
 
-# Split data menjadi Train (80%) dan Test (20%)
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-print(f"Data Siap! Sesi Training dengan {len(X_train)} baris data...")
-
-# 4. Training Menggunakan XGBoost Regressor
-model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=6, random_state=42)
+# ==========================================
+# 3. TRAINING MODEL
+# ==========================================
+print("Memulai proses training XGBoost...")
+model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=6, tree_method='hist', random_state=42)
 model.fit(X_train, y_train)
 
-# 5. Evaluasi Model
+# ====== BAGIAN EVALUASI (SUDAH DIREVISI AGAR MAE KELUAR) ======
 y_pred = model.predict(X_test)
-print("\n--- Hasil Evaluasi Model Forecasting ---")
-print(f"Mean Absolute Error (MAE): {mean_absolute_error(y_test, y_pred):.2f} perjalanan")
-print(f"R2 Score (Akurasi): {r2_score(y_test, y_pred)*100:.2f}%")
+
+mae_value = mean_absolute_error(y_test, y_pred)
+r2_value = r2_score(y_test, y_pred) * 100
+
+print("\n=== HASIL EVALUASI MODEL ===")
+print(f"Akurasi Model (R2 Score)  : {r2_value:.2f}%")
+print(f"Rata-rata Error (MAE)      : {mae_value:.2f}")
+print("=============================\n")
+
+
+# ==========================================
+# 4. SAVE MODEL KE PILOT (.PKL)
+# ==========================================
+model_dir = r"C:\KULIAH\S6\RDV\project\models"
+if not os.path.exists(model_dir):
+    os.makedirs(model_dir)
+
+model_path = os.path.join(model_dir, "model_demand.pkl")
+with open(model_path, "wb") as f:
+    pickle.dump(model, f)
+
+print(f"-> Sukses! Model disimpan di: {model_path}")
+
+
+# ==========================================
+# 5. GENERATE DATA PREDIKSI UNTUK POWER BI
+# ==========================================
+print("\n--- Membuat Data Hasil Prediksi untuk Power BI ---")
+df_ml['predicted_demand'] = model.predict(X)
+
+# Ambil kolom esensial saja
+df_powerbi = df_ml[['pickup_date', 'pickup_hour', 'location_id', 'total_demand', 'predicted_demand']]
+df_powerbi['pickup_date'] = df_powerbi['pickup_date'].dt.strftime('%Y-%m-%d')
+
+# ====== BAGIAN EKSPOR (SUDAH DIREVISI UNTUK LAPTOP INDONESIA) ======
+# sep=';' -> Mengubah pemisah kolom menjadi titik koma
+# decimal=',' -> Mengubah tanda desimal titik (.) menjadi koma (,) asli
+csv_output_path = r"C:\KULIAH\S6\RDV\project\data\processed\csv_export\fact_predicted_demand.csv"
+df_powerbi.to_csv(csv_output_path, sep=';', decimal=',', index=False)
+
+print(f"-> Sukses! File visualisasi format Indonesia disimpan di: {csv_output_path}")
+
+con.close()
