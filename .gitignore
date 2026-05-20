@@ -1,0 +1,9 @@
+# Mengabaikan folder virtual environment
+.venv/
+__pycache__/
+
+# Mengabaikan semua file data berukuran besar
+data/
+*.duckdb
+*.parquet
+*.csv
