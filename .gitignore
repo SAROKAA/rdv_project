@@ -3,7 +3,7 @@
 __pycache__/
 
 # Mengabaikan semua file data berukuran besar
-data/
+/data/
 *.duckdb
 *.parquet
 *.csv
