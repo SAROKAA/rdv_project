@@ -6,9 +6,6 @@ from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
 
-# ==========================================
-# 1. AMBIL DATA AGREGAT DARI DUCKDB
-# ==========================================
 db_path = r"C:\KULIAH\S6\RDV\project\data\processed\rdv_project.duckdb"
 con = duckdb.connect(db_path)
 
@@ -32,27 +29,19 @@ query = """
 df_ml = con.execute(query).df()
 print(f"Total baris agregat data: {len(df_ml):,}")
 
-# ==========================================
-# 2. FEATURE ENGINEERING
-# ==========================================
 df_ml['pickup_date'] = pd.to_datetime(df_ml['pickup_date'])
 df_ml['day_of_week'] = df_ml['pickup_date'].dt.dayofweek
 
-# Atur Fitur (X) dan Target (Y)
 features = ['pickup_hour', 'location_id', 'temperature', 'precipitation', 'weathercode', 'day_of_week']
 X = df_ml[features]
 y = df_ml['total_demand']
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# ==========================================
-# 3. TRAINING MODEL
-# ==========================================
 print("Memulai proses training XGBoost...")
 model = XGBRegressor(n_estimators=100, learning_rate=0.1, max_depth=6, tree_method='hist', random_state=42)
 model.fit(X_train, y_train)
 
-# ====== BAGIAN EVALUASI (SUDAH DIREVISI AGAR MAE KELUAR) ======
 y_pred = model.predict(X_test)
 
 mae_value = mean_absolute_error(y_test, y_pred)
@@ -63,10 +52,6 @@ print(f"Akurasi Model (R2 Score)  : {r2_value:.2f}%")
 print(f"Rata-rata Error (MAE)      : {mae_value:.2f}")
 print("=============================\n")
 
-
-# ==========================================
-# 4. SAVE MODEL KE PILOT (.PKL)
-# ==========================================
 model_dir = r"C:\KULIAH\S6\RDV\project\models"
 if not os.path.exists(model_dir):
     os.makedirs(model_dir)
@@ -77,20 +62,12 @@ with open(model_path, "wb") as f:
 
 print(f"-> Sukses! Model disimpan di: {model_path}")
 
-
-# ==========================================
-# 5. GENERATE DATA PREDIKSI UNTUK POWER BI
-# ==========================================
 print("\n--- Membuat Data Hasil Prediksi untuk Power BI ---")
 df_ml['predicted_demand'] = model.predict(X)
 
-# Ambil kolom esensial saja
 df_powerbi = df_ml[['pickup_date', 'pickup_hour', 'location_id', 'total_demand', 'predicted_demand']]
 df_powerbi['pickup_date'] = df_powerbi['pickup_date'].dt.strftime('%Y-%m-%d')
 
-# ====== BAGIAN EKSPOR (SUDAH DIREVISI UNTUK LAPTOP INDONESIA) ======
-# sep=';' -> Mengubah pemisah kolom menjadi titik koma
-# decimal=',' -> Mengubah tanda desimal titik (.) menjadi koma (,) asli
 csv_output_path = r"C:\KULIAH\S6\RDV\project\data\processed\csv_export\fact_predicted_demand.csv"
 df_powerbi.to_csv(csv_output_path, sep=';', decimal=',', index=False)
 

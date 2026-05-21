@@ -1,29 +1,19 @@
 import os
 import duckdb
 
-# ==========================================
-# 1. SETUP & CONFIGURATION (Windows Local)
-# ==========================================
-# Lokasi data terpartisi hasil tahap ingestion sebelumnya
 input_path = r"C:\KULIAH\S6\RDV\project\data\processed\taxi_processed"
 output_path = r"C:\KULIAH\S6\RDV\project\data\processed"
 
-# Pola untuk membaca seluruh file parquet di dalam folder partisi
 local_glob_pattern = os.path.join(input_path, "**", "*.parquet")
 cleaned_file_path = os.path.join(output_path, "taxi_cleaned.parquet")
 
 print(f"Reading processed data from: {input_path}")
 print(f"Cleaned data will be saved to: {cleaned_file_path}")
 
-# ==========================================
-# 2. DATA CLEANING & FEATURE ENGINEERING VIA DUCKDB
-# ==========================================
 print("\n--- Starting Data Cleaning & Transformation ---")
 
 con = duckdb.connect()
 
-# Kita konversi logika pembersihan data kamu ke dalam SQL DuckDB yang jauh lebih cepat.
-# Fungsi CASE WHEN menggantikan fungsi .apply() Pandas dengan performa berkali-kali lipat.
 cleaning_query = f"""
     WITH raw_data AS (
         SELECT 
@@ -81,7 +71,6 @@ cleaning_query = f"""
 """
 
 print("Executing cleaning query and writing directly to Parquet...")
-# Jalankan query dan langsung stream hasilnya ke file parquet tunggal yang bersih
 con.execute(f"""
     COPY ({cleaning_query}) 
     TO '{cleaned_file_path}' 
@@ -90,25 +79,18 @@ con.execute(f"""
 
 print("Cleaned data saved successfully!")
 
-# ==========================================
-# 3. VERIFIKASI & ANALISIS DESKRIPTIF
-# ==========================================
 print("\n--- Verifying Cleaned Data ---")
 
-# 1. Ambil total baris data yang sudah bersih
 total_rows = con.execute(f"SELECT COUNT(*) FROM read_parquet('{cleaned_file_path}')").fetchone()[0]
 print(f"Total rows after cleaning: {total_rows:,}")
 
-# 2. Distribusi Kategori Waktu
 print("\nTime Category Distribution:")
 print(con.execute(f"SELECT time_category, COUNT(*) as count FROM read_parquet('{cleaned_file_path}') GROUP BY time_category").df())
 
-# 3. AMBIL SEMUA KOLOM (Menggunakan LIMIT 5 agar hemat RAM) untuk Preview Head
 print("\nPreview 5 Data Teratas (Semua Kolom):")
 full_preview_df = con.execute(f"SELECT * FROM read_parquet('{cleaned_file_path}') LIMIT 5").df()
 print(full_preview_df)
 
-# 4. Ringkasan Statistik khusus untuk kolom-kolom numerik saja
 print("\nSummary Statistics (Describe untuk kolom numerik):")
 numeric_summary_df = con.execute(f"""
     SELECT 
